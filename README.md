@@ -10,7 +10,7 @@ Quick Start
 To begin interacting with a Backplane server, simply register a function to be called
 once the Backplane library has completed initialization and call Backplane.init().
 
-{code}
+```
  Backplane(initComplete);
  Backplane.init({
     serverBaseURL: "https://my.backplaneserver.com/v2",
@@ -55,7 +55,7 @@ once the Backplane library has completed initialization and call Backplane.init(
     // If the Backplane channel DOES change, all init complete functions will be called again.
 
  }
- {code}
+ ```
 
  TODO
  ----
