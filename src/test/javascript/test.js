@@ -51,15 +51,15 @@ describe('Backplane', function() {
 
     it('test getMessages', function() {
         var localStorageFake = {};
-        window.localStorage.setItem = function(key, value) {
+        Storage.prototype.setItem = function(key, value) {
             localStorageFake[key] = value;
         }
-        window.localStorage.getItem = function(key) {
+        Storage.prototype.getItem = function(key) {
             console.info(key);
             console.info(localStorageFake[key]);
             return localStorageFake[key];
         }
-        window.localStorage.removeItem = function(key) {
+        Storage.prototype.removeItem = function(key) {
             delete localStorageFake[key];
         }
         Backplane.invalidateCache();
@@ -83,6 +83,22 @@ describe('Backplane', function() {
         var messages = Backplane.getCachedMessages();
         expect(messages.length).toEqual(1);
 
+    });
+   
+    it('test cache sync', function() {
+        Backplane.invalidateCache();
+        Backplane.addMessageToLongTermCache(sampleMessage);
+        Backplane.syncMemoryCache();
+        messages = Backplane.getCachedMessages();
+        expect(messages.length).toEqual(Backplane.memoryCachedMessagesIndex.length);
+    });
+
+    it('test subscribe/unsubscribe', function() {
+       Backplane.subscribers={};
+       var id = Backplane.subscribe(function() {});
+       expect(Backplane.checkSubscribers()).toEqual(true);
+       Backplane.unsubscribe(id);
+       expect(Backplane.checkSubscribers()).toEqual(false);
     });
 
 });
