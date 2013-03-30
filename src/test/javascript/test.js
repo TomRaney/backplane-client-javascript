@@ -51,10 +51,10 @@ describe('Backplane', function() {
 
     it('test getMessages', function() {
         var localStorageFake = {};
-        localStorage.setItem = function(key, value) {
+        window.localStorage.setItem = function(key, value) {
             localStorageFake[key] = value;
         }
-        localStorage.getItem = function(key) {
+        window.localStorage.getItem = function(key) {
             console.info(key);
             console.info(localStorageFake[key]);
             return localStorageFake[key];
@@ -65,11 +65,11 @@ describe('Backplane', function() {
         Backplane.invalidateCache();
         var messages = Backplane.getCachedMessages();
         expect(messages.length).toEqual(0);
-        Backplane.cacheMessage(sampleMessage);
+        Backplane.addMessageToLongTermCache(sampleMessage);
         messages = Backplane.getCachedMessages();
         expect(messages.length).toEqual(1);
         // putMessage should be idempotent
-        Backplane.cacheMessage(sampleMessage);
+        Backplane.addMessageToLongTermCache(sampleMessage);
         messages = Backplane.getCachedMessages();
         expect(messages.length).toEqual(1);
 

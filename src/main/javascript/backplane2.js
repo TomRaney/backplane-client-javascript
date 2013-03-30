@@ -47,6 +47,7 @@ window.Backplane = window.Backplane || (function() {
     BP.config = {};
     BP.runRequests = false;
     BP.firstFrameReceived = false;
+    BP.replayOnPageLoad = false;
     BP.memoryCachedMessages = {};
     BP.memoryCachedMessagesIndex = [];
     BP.cacheMax = 10;
@@ -81,6 +82,7 @@ window.Backplane = window.Backplane || (function() {
  *     channelExpires (optional) - set backplane2-channel cookie life span
  *     cacheMax (optional) - how many messages to cache for late arriving widgets, default is 10
  *     block (optional) - how many seconds to hold connection open with server
+ *     replayOnPageLoad (optional) - replay all messages from long term cache on each page load, default is false
  */
 Backplane.init = function(config) {
     this.log("initializing");
@@ -106,6 +108,7 @@ Backplane.init = function(config) {
     this.loadChannelFromCookie();
 
     this.cacheMax = config.cacheMax || this.cacheMax;
+    this.replayOnPageLoad = config.replayOnPageLoad || this.replayOnPageLoad;
     this.block = config.block || 0;
     if (typeof this.config.channelExpires === "undefined") {
         var d = new Date();
@@ -116,7 +119,6 @@ Backplane.init = function(config) {
     if (this.getChannelName()) {
         this.onInit();
         this.request();
-        //this.fetchMessages();
     } else {
         this.invalidateCache();
         this.fetchNewChannel();
@@ -144,8 +146,10 @@ Backplane.subscribe = function(callback) {
     }
     var i, id = new Date().getTime() + Math.random();
     this.subscribers[id] = callback;
-    //if the first frame has already been processed, catch this widget up
-    if (this.firstFrameReceived) {
+    // If the first frame has already been processed 
+    // or if replayOnPageLoad is true, push all messages
+    // to subscriber from memory cache 
+    if (this.firstFrameReceived || this.replayOnPageLoad) {
         for (i=0; i<this.memoryCachedMessagesIndex.length; i++) {
             callback(this.memoryCachedMessages[this.memoryCachedMessagesIndex[i]]);
         }
@@ -154,7 +158,7 @@ Backplane.subscribe = function(callback) {
 };
 
 /**
- * Retrieve all cached messages.
+ * Retrieve all long term cached messages.
  *
  */
 Backplane.getCachedMessages = function() {
@@ -191,8 +195,29 @@ Backplane.getCachedMessages = function() {
 };
 
 
-Backplane.cacheMessage = function(message) {
+Backplane.syncMemoryCache = function() {
+    this.memoryCachedMessages = {};
+    this.memoryCachedMessagesIndex = [];
+    var messages = Backplane.getCachedMessages();
+    for (i = 0; i < messages.length; i++) {
+       Backplane.addMessageToMemoryCache(messages[i]);
+    } 
+}
+
+Backplane.addMessageToMemoryCache = function(message) {
+   if (!this.memoryCachedMessages.hasOwnProperty(message.messageURL)) {
+       this.memoryCachedMessages[message.messageURL] = message;
+       this.memoryCachedMessagesIndex.push(message.messageURL);
+   }
+   if (this.memoryCachedMessagesIndex.length > this.cacheMax) {
+      delete this.memoryCachedMessages[this.memoryCachedMessagesIndex[0]];
+      this.memoryCachedMessagesIndex.splice(0,1);
+   }
+}
+
+Backplane.addMessageToLongTermCache = function(message) {
     var indexString, messageString, cachedIndex = [], cached = {};
+ 
     if (window.localStorage) {
         indexString = window.localStorage.getItem(this.messageCacheIndexKey);
         messageString = window.localStorage.getItem(this.messageCacheKey);
@@ -532,14 +557,20 @@ Backplane.request = function() {
             self.request();
         }, (Backplane.block * 1000) + 5000);
 
-        // if no since parameter exists, check the cache to get
-        // the last message id delivered
+        // If no 'since' parameter exists, this is the FIRST call.
+        // Check the long term cache to get the last message id delivered 
+        // and sync up the in-memory message header cache if required.
         if (!self.since) {
             var messages = self.getCachedMessages();
             self.log(messages.length + " message(s) in cache");
             if (messages.length > 0) {
                 self.since = self.convertMessageURLtoNextURL(messages[messages.length-1].messageURL);
             }
+            // if the desire is to play back all messages for each page load
+            // then sync up the memory cache with the long term cache
+            if (self.replayOnPageLoad) {
+               Backplane.syncMemoryCache();
+            }            
         }
 
         Backplane.fetchMessages();
@@ -580,26 +611,17 @@ Backplane.response = function(messageFrame) {
     this.since = messageFrame.nextURL;
 
     for (i = 0; i < messageFrame.messages.length; i++) {
+
+        // store in both caches
+        Backplane.addMessageToLongTermCache(messageFrame.messages[i]);
+        Backplane.addMessageToMemoryCache(messageFrame.messages[i]);
+
         // notify subscribers
         for (j in this.subscribers) {
             if (this.subscribers.hasOwnProperty(j)) {
                 this.subscribers[j](messageFrame.messages[i]);
             }
         }
-        // stash message in memory cache
-        if (this.cacheMax > 0) {
-            if (!this.memoryCachedMessages.hasOwnProperty(messageFrame.messages[messageFrame.messages[i].messageURL])) {
-                this.memoryCachedMessages[messageFrame.messages[i].messageURL] = messageFrame.messages[i];
-                this.memoryCachedMessagesIndex.push(messageFrame.messages[i].messageURL);
-            }
-            if (this.memoryCachedMessagesIndex.length > this.cacheMax) {
-                delete this.memoryCachedMessages[this.memoryCachedMessagesIndex[0]];
-                this.memoryCachedMessagesIndex.splice(0,1);
-            }
-        }
-
-        // store in browser storage
-        Backplane.cacheMessage(messageFrame.messages[i]);
 
         // clean up awaiting specific events queue
         queue = [];
